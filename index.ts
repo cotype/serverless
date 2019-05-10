@@ -114,34 +114,9 @@ export default class CotypePlugin implements Plugin {
     return bundler.bundle();
   }
   async build() {
-    this.serverless.cli.log('Cotype: Building handlers');
     await this.buildConfig();
 
-    // const handlersFile = path.join(
-    //   this.serverless.config.servicePath,
-    //   this.options.buildDir!,
-    //   'handlers.js',
-    // );
-    // await new Bundler(path.resolve(__dirname, 'src/handlers.js'), {
-    //   ...this.bundlerOpts(),
-    //   outDir: path.dirname(handlersFile),
-    //   outFile: path.basename(handlersFile),
-    // }).bundle();
-
-    // const relativeHandlersFile = path.join(this.options.buildDir!, 'handlers');
-
-    // this.service.update({
-    //   functions: {
-    //     migrate: {
-    //       handler: `${relativeHandlersFile}.migrate`,
-    //     },
-    //     cotype: {
-    //       handler: `${relativeHandlersFile}.cotype`,
-    //     },
-    //   },
-    // });
-
-    this.serverless.cli.log('Cotype: Done');
+    // maybe also pre-bundle everything?!
   }
   async buildConfig() {
     if (!this.options[TS_CONFIG_FILE]) {

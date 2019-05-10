@@ -4,12 +4,13 @@
   "description": "run cotype in a serverless environment",
   "main": "index.js",
   "scripts": {
+    "prepare": "npm run build",
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc"
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/Xiphe/serverless-cotype.git"
+    "url": "https://github.com/cotype/serverless.git"
   },
   "keywords": [
     "serverless",
@@ -27,7 +28,7 @@
   },
   "homepage": "https://github.com/Xiphe/serverless-cotype#readme",
   "peerDependencies": {
-    "@cotype/core": "*",
+    "@cotype/core": "^1",
     "serverless": "^1",
     "aws-sdk": "^2",
     "serverless-http": "^2"
