@@ -2,8 +2,11 @@ import Serverless from 'serverless';
 import Plugin from 'serverless/classes/Plugin';
 import Service from 'serverless/classes/Service';
 import * as path from 'path';
-import { existsSync } from 'fs';
+import { existsSync, writeFile } from 'fs';
 import Bundler from 'parcel-bundler';
+import getConfig from './src/getConfig';
+import { getRestApiBuilder } from '@cotype/core';
+import { generateClient } from '@cotype/build-client';
 
 const AUTO_WATCH = Symbol('AUTO_WATCH');
 const TS_CONFIG_FILE = Symbol('TS_CONFIG_FILE');
@@ -37,55 +40,54 @@ export default class CotypePlugin implements Plugin {
   };
   serverless: Serverless;
   service: ServiceWithPackage;
-  options: Options;
+  options: Serverless.Options;
   commands: {
     [command: string]: {};
   };
   constructor(serverless: Serverless, options: Serverless.Options) {
     this.serverless = serverless;
     this.service = serverless.service;
-    this.options = this.withConfig({
-      ...this.getDefaultOptions(),
-      ...(serverless.service.custom || {})['cotype'],
-      ...options,
-    });
+    this.options = options;
 
-    this.addIncludes();
-    this.addFunctions();
-    if (this.options.createMediaBucket) {
-      this.addMediaBucket();
-    }
+    this.addFunctions(this.getOptions());
 
     this.hooks = {
-      'before:offline:start:init': this.watchConfig.bind(this),
+      'before:offline:start': this.offline.bind(this),
+      'before:offline:start:init': this.offline.bind(this),
       'before:run:run': this.build.bind(this),
       'before:invoke:local:invoke': this.build.bind(this),
       'before:package:createDeploymentArtifacts': this.build.bind(this),
       'before:deploy:function:packageFunction': this.build.bind(this),
     };
   }
-  addIncludes() {
+
+  getOptions() {
+    return this.withConfig({
+      ...this.getDefaultOptions(),
+      ...(this.serverless.service.custom || {})['cotype'],
+      ...this.options,
+    });
+  }
+
+  addIncludes({ buildDir }: Options) {
     this.service.package = this.service.package || {};
     this.service.package.include = this.service.package.include || [];
     this.service.package.include.push(
       path.relative(
         this.serverless.config.servicePath,
-        path.resolve(
-          this.serverless.config.servicePath,
-          this.options.buildDir!,
-          '**',
-        ),
+        path.resolve(this.serverless.config.servicePath, buildDir!, '**'),
       ),
     );
     this.service.package.include.push(
       'node_modules/@cotype/serverless/lib/src',
     );
   }
-  bundlerOpts(): ParcelOptionsWithAutoInstall {
+
+  bundlerOpts(options: Options): ParcelOptionsWithAutoInstall {
     return {
       watch: false,
-      outDir: path.dirname(this.options.configFile!),
-      outFile: path.basename(this.options.configFile!),
+      outDir: path.dirname(options.configFile!),
+      outFile: path.basename(options.configFile!),
       autoInstall: false,
       target: 'node',
       logLevel: 2,
@@ -97,41 +99,99 @@ export default class CotypePlugin implements Plugin {
       minify: true,
     };
   }
-  async watchConfig() {
+
+  async watchConfig(options: Options) {
     if (
-      !this.options[TS_CONFIG_FILE] ||
-      !this.options.watch ||
-      this.options.watch !== AUTO_WATCH
+      !options[TS_CONFIG_FILE] ||
+      !options.watch ||
+      options.watch !== AUTO_WATCH
     ) {
       return;
     }
 
-    const bundler = new Bundler(this.options[TS_CONFIG_FILE], {
-      ...this.bundlerOpts(),
+    const bundler = new Bundler(options[TS_CONFIG_FILE], {
+      ...this.bundlerOpts(options),
       watch: true,
     });
 
-    return bundler.bundle();
+    bundler.on('bundled', this.buildApi(options));
+
+    await bundler.bundle();
   }
+
+  buildApi(options: Options) {
+    return async () => {
+      const { config, client } = await getConfig(
+        {
+          cwd: () => this.serverless.config.servicePath,
+          env: {
+            ...this.getEnv(options),
+            NODE_ENV: process.env.NODE_ENV,
+          },
+        },
+        true,
+      );
+
+      const spec = (await getRestApiBuilder(config)).getSpec();
+      const clientCode = await generateClient(spec, client);
+      const apiFile = path.resolve(
+        this.serverless.config.servicePath,
+        options.buildDir!,
+        'Api.ts',
+      );
+      await new Promise((resolve, reject) => {
+        writeFile(apiFile, clientCode, (err) =>
+          err ? reject(err) : resolve(),
+        );
+      });
+    };
+  }
+
+  async offline() {
+    const options = this.getOptions();
+    this.addFunctions(options);
+    this.watchConfig(options);
+  }
+
   async build() {
-    await this.buildConfig();
+    const options = this.getOptions();
+    this.addIncludes(options);
+    this.addFunctions(options);
+    if (options.createMediaBucket) {
+      this.addMediaBucket(options);
+    }
+    await this.buildConfig(options);
+    await this.buildApi(options)();
 
     // maybe also pre-bundle everything?!
   }
-  async buildConfig() {
-    if (!this.options[TS_CONFIG_FILE]) {
+  async buildConfig(options: Options) {
+    if (!options[TS_CONFIG_FILE]) {
       return;
     }
 
     const bundler = new Bundler(
-      this.options[TS_CONFIG_FILE],
-      this.bundlerOpts(),
+      options[TS_CONFIG_FILE],
+      this.bundlerOpts(options),
     );
 
     return bundler.bundle();
   }
-  addFunctions() {
+
+  getEnv(options: Options) {
+    return {
+      DB: options.db,
+      BASE_PATH: options.basePath,
+      COTYPE_BASE_PATH: options.cotypeBasePath,
+      SESSION_SECRET: options.sessionSecret,
+      MEDIA_BUCKET: options.mediaBucketName,
+      COTYPE_CONFIG_FILE: options.configFile,
+    };
+  }
+
+  addFunctions(options: Options) {
     const handlersFile = 'node_modules/@cotype/serverless/lib/src/handlers';
+    const { db, basePath } = options;
 
     this.service.update({
       functions: {
@@ -139,31 +199,24 @@ export default class CotypePlugin implements Plugin {
           handler: `${handlersFile}.migrate`,
           timeout: 120,
           environment: {
-            DB: this.options.db,
+            DB: db,
           },
         },
         cotype: {
           handler: `${handlersFile}.cotype`,
           timeout: 30,
-          environment: {
-            DB: this.options.db,
-            BASE_PATH: this.options.basePath,
-            COTYPE_BASE_PATH: this.options.cotypeBasePath,
-            SESSION_SECRET: this.options.sessionSecret,
-            MEDIA_BUCKET: this.options.mediaBucketName,
-            COTYPE_CONFIG_FILE: this.options.configFile,
-          },
+          environment: this.getEnv(options),
           events: [
             {
               http: {
-                path: this.options.basePath,
+                path: basePath,
                 method: 'ANY',
                 cors: true,
               },
             },
             {
               http: {
-                path: `${this.options.basePath}/{any+}`,
+                path: `${basePath}/{any+}`,
                 method: 'ANY',
                 cors: true,
               },
@@ -173,14 +226,14 @@ export default class CotypePlugin implements Plugin {
       },
     });
   }
-  addMediaBucket() {
+  addMediaBucket({ mediaBucketName }: Options) {
     this.service.update({
       resources: {
         Resources: {
           MediaBucket: {
             Type: 'AWS::S3::Bucket',
             Properties: {
-              BucketName: this.options.mediaBucketName,
+              BucketName: mediaBucketName,
               AccessControl: 'PublicRead',
               CorsConfiguration: {
                 CorsRules: [
@@ -203,7 +256,7 @@ export default class CotypePlugin implements Plugin {
                 Statement: {
                   Action: ['s3:GetObject'],
                   Effect: 'Allow',
-                  Resource: `arn:aws:s3:::${this.options.mediaBucketName}/*`,
+                  Resource: `arn:aws:s3:::${mediaBucketName}/*`,
                   Principal: '*',
                 },
               },
