@@ -182,6 +182,7 @@ export default class CotypePlugin implements Plugin {
     return {
       DB: options.db,
       BASE_PATH: options.basePath,
+      STACK_STAGE: this.service.provider.stage,
       COTYPE_BASE_PATH: options.cotypeBasePath,
       SESSION_SECRET: options.sessionSecret,
       MEDIA_BUCKET: options.mediaBucketName,

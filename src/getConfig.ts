@@ -44,6 +44,8 @@ export default async function getConfig(
       )
     : { opts: {}, client: false };
 
+  const basePath = getBasePath(env);
+
   const defaults: Partial<Opts> = {
     models: [
       {
@@ -58,10 +60,13 @@ export default async function getConfig(
         },
       },
     ],
-    basePath: getBasePath(env),
+    basePath,
     sessionOpts: {
       secret: env.SESSION_SECRET,
       secure: env.IS_OFFLINE ? false : true,
+    },
+    baseUrls: {
+      cms: env.IS_OFFLINE ? basePath : `/${env.STACK_STAGE}${basePath}`,
     },
     storage: new S3Storage(env.MEDIA_BUCKET!),
     persistenceAdapter: knexAdapter(false),

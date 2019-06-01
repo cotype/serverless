@@ -28,7 +28,7 @@
   },
   "homepage": "https://github.com/Xiphe/serverless-cotype#readme",
   "peerDependencies": {
-    "@cotype/core": "^1.8",
+    "@cotype/core": "^1.12.5",
     "serverless": "^1",
     "aws-sdk": "^2",
     "serverless-http": "^2"
@@ -38,6 +38,7 @@
     "parcel-bundler": "^1.12.3"
   },
   "devDependencies": {
+    "@cotype/core": "1.12.5",
     "@types/aws-lambda": "8.10.24",
     "@types/node": "11.13.8",
     "@types/parcel-bundler": "1.12.0",
