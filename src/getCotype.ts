@@ -10,7 +10,11 @@ type LambdaPartial = Promise<
 
 const isOffline = process.env.IS_OFFLINE;
 
-export async function getCotype() {
+type PromisedResult<M> = M extends (...args: any) => Promise<infer T>
+  ? T
+  : never;
+
+export async function getCotype(): Promise<PromisedResult<typeof init>> {
   return init((await getConfig(process)).config);
 }
 
