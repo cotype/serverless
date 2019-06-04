@@ -16,6 +16,10 @@ export type Options = {
   basePath?: string;
   cotypeBasePath?: string;
   buildDir?: string;
+  vpc?: {
+    securityGroupIds: string[];
+    subnetIds: string[];
+  };
   configFile?: string;
   domain?: string;
   watch?: boolean | symbol;
@@ -205,11 +209,12 @@ export default class CotypePlugin implements Plugin {
 
   addFunctions(options: Options) {
     const handlersFile = 'node_modules/@cotype/serverless/lib/src/handlers';
-    const { db, basePath } = options;
+    const { db, basePath, vpc } = options;
 
     this.service.update({
       functions: {
         migrate: {
+          vpc,
           handler: `${handlersFile}.migrate`,
           timeout: 120,
           environment: {
@@ -217,6 +222,7 @@ export default class CotypePlugin implements Plugin {
           },
         },
         cotype: {
+          vpc,
           handler: `${handlersFile}.cotype`,
           timeout: 30,
           environment: this.getEnv(options),
