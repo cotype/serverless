@@ -66,7 +66,7 @@ export default async function getConfig(
       secure: env.IS_OFFLINE ? false : true,
     },
     baseUrls: {
-      cms: env.IS_OFFLINE ? basePath : `/${env.STACK_STAGE}${basePath}`,
+      cms: env.CMS_URL,
     },
     storage: new S3Storage(env.MEDIA_BUCKET!),
     persistenceAdapter: knexAdapter(false),

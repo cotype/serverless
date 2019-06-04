@@ -17,6 +17,7 @@ export type Options = {
   cotypeBasePath?: string;
   buildDir?: string;
   configFile?: string;
+  domain?: string;
   watch?: boolean | symbol;
   [TS_CONFIG_FILE]?: string;
   sessionSecret?: string;
@@ -40,7 +41,9 @@ export default class CotypePlugin implements Plugin {
   };
   serverless: Serverless;
   service: ServiceWithPackage;
-  options: Serverless.Options;
+  options: Serverless.Options & {
+    port?: number | string;
+  };
   commands: {
     [command: string]: {};
   };
@@ -49,7 +52,7 @@ export default class CotypePlugin implements Plugin {
     this.service = serverless.service;
     this.options = options;
 
-    this.addFunctions(this.getOptions());
+    this.addFunctionPlaceholders();
 
     this.hooks = {
       'before:offline:start': this.offline.bind(this),
@@ -125,8 +128,8 @@ export default class CotypePlugin implements Plugin {
         {
           cwd: () => this.serverless.config.servicePath,
           env: {
+            ...process.env,
             ...this.getEnv(options),
-            NODE_ENV: process.env.NODE_ENV,
           },
         },
         true,
@@ -148,6 +151,7 @@ export default class CotypePlugin implements Plugin {
   }
 
   async offline() {
+    process.env.IS_OFFLINE = 'true';
     const options = this.getOptions();
     this.addFunctions(options);
     this.watchConfig(options);
@@ -187,6 +191,15 @@ export default class CotypePlugin implements Plugin {
       SESSION_SECRET: options.sessionSecret,
       MEDIA_BUCKET: options.mediaBucketName,
       COTYPE_CONFIG_FILE: options.configFile,
+      CMS_URL: `${
+        process.env.IS_OFFLINE
+          ? `http://localhost:${this.options.port ||
+              (this.service.custom &&
+                this.service.custom['serverless-offline'] &&
+                this.service.custom['serverless-offline'].port) ||
+              3000}`
+          : options.domain
+      }${options.cotypeBasePath || options.basePath}`,
     };
   }
 
@@ -227,6 +240,21 @@ export default class CotypePlugin implements Plugin {
       },
     });
   }
+
+  addFunctionPlaceholders() {
+    const handlersFile = 'node_modules/@cotype/serverless/lib/src/handlers';
+    this.service.update({
+      functions: {
+        migrate: {
+          handler: `${handlersFile}.migrate`,
+        },
+        cotype: {
+          handler: `${handlersFile}.cotype`,
+        },
+      },
+    });
+  }
+
   addMediaBucket({ mediaBucketName }: Options) {
     this.service.update({
       resources: {
@@ -271,6 +299,7 @@ export default class CotypePlugin implements Plugin {
     return {
       basePath: '/cotype',
       buildDir: '.cotype',
+      domain: '/',
       watch: AUTO_WATCH,
       createMediaBucket: true,
       configFile: this.tryConfigs(),
